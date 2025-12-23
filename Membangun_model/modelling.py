@@ -1,32 +1,29 @@
 """
-modelling.py
-------------
-Modul ini bertanggung jawab untuk melatih Baseline Model menggunakan Deep Learning (TensorFlow/Keras).
-Script ini mencakup pipeline standar ML: Loading -> Splitting -> Scaling -> Training -> Evaluation -> Saving.
+modelling_mlflow.py
+-------------------
+Modul training Baseline Model (Deep Learning) yang sudah terintegrasi dengan MLflow.
+Script ini mengadaptasi logika preprocessing original (Scaling + SMOTE) ke dalam
+structure MLflow experiment tracking.
 
-Fitur Utama:
-1. Arsitektur Deep Neural Network (DNN) dengan Dropout untuk regularisasi.
-2. Early Stopping untuk mencegah Overfitting dan menghemat waktu komputasi.
-3. Penyimpanan Artifacts (Model .h5 & Scaler .pkl) untuk deployment.
-4. Visualisasi Learning Curve (Loss & Accuracy).
-5. Penanganan Imbalanced Data (SMOTE + Class Weights).
+Changes:
+- Refactored from Class-based to Functional-based (sesuai request).
+- Integrated MLflow Tracking & Artifact Logging.
+- Auto-logging metrics, params, and models using mlflow.tensorflow.
 
-Author: Caleb Anthony (Automated by System)
+Author: Caleb Anthony
 Date: 2025-10-30
-Version: 1.0 (Baseline Deep Learning)
 """
 
 import pandas as pd
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import seaborn as sns
 import joblib
 import os
-import sys
-import logging
+import shutil
+import mlflow
+import mlflow.tensorflow
 from pathlib import Path
-from typing import Tuple, Optional
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -39,256 +36,154 @@ from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
 
-# --- KONFIGURASI LOGGING ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
+# --- KONFIGURASI MLFLOW ---
+# Pastikan server MLflow sudah jalan (mlflow ui) sebelum run script ini
+mlflow.set_tracking_uri("http://127.0.0.1:5000")
+mlflow.set_experiment("Churn_Prediction_Deep_Learning")
 
-# --- KONFIGURASI PROJECT ---
-class ModelConfig:
-    # Path Handling
+def train_model():
+    print("=== Memulai Pipeline Training dengan MLflow ===")
+    
+    # 1. SETUP PATH & DATA
+    # Menggunakan path relative seperti script asli
     BASE_DIR = Path(__file__).resolve().parent
-    # Mengambil data bersih dari folder eksperimen (Single Source of Truth)
+    # Path dataset (sesuaikan jika perlu)
     DATA_PATH = BASE_DIR.parent / 'Eksperimen_SML_CalebAnthony' / 'churn_preprocessing' / 'clean_data.csv'
     
-    # Output Artifacts
-    ARTIFACTS_DIR = BASE_DIR / 'artifacts'
-    MODEL_SAVE_PATH = ARTIFACTS_DIR / 'baseline_model.h5'
-    SCALER_SAVE_PATH = ARTIFACTS_DIR / 'scaler.pkl'
-    HISTORY_PLOT_PATH = ARTIFACTS_DIR / 'training_history.png'
+    # Cek keberadaan data
+    if not os.path.exists(DATA_PATH):
+        print(f"ERROR: Data tidak ditemukan di {DATA_PATH}")
+        return
+
+    print(f"Loading dataset dari: {DATA_PATH}")
+    df = pd.read_csv(DATA_PATH)
+
+    # 2. PREPROCESSING (Original Logic)
+    target_col = 'default'
+    X = df.drop(columns=[target_col], errors='ignore')
+    y = df[target_col]
+
+    # Split Data (Stratified)
+    print("Splitting data...")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, 
+        test_size=0.2, 
+        random_state=42, 
+        stratify=y
+    )
+
+    # Scaling (StandardScaler)
+    print("Scaling fitur...")
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    # SMOTE (Handling Imbalance)
+    print("Menerapkan SMOTE...")
+    smote = SMOTE(random_state=42)
+    X_train, y_train = smote.fit_resample(X_train, y_train)
+
+    # Compute Class Weights (Untuk kestabilan loss function)
+    class_weights = compute_class_weight(
+        class_weight='balanced',
+        classes=np.unique(y_train),
+        y=y_train
+    )
+    class_weight_dict = dict(enumerate(class_weights))
+
+    # 3. SETUP MODEL ARSITEKTUR
+    input_dim = X_train.shape[1]
     
-    # Model Parameters (Baseline)
-    TEST_SIZE = 0.2
-    RANDOM_STATE = 42
-    EPOCHS = 50          # Batas maksimal epoch
-    BATCH_SIZE = 32      # Standar untuk dataset ukuran menengah
-    LEARNING_RATE = 0.001
-    PATIENCE = 5         # Stop training jika tidak ada perbaikan selama 5 epoch
-
-class ChurnBaselineTrainer:
-    """
-    Kelas Trainer untuk Baseline Deep Learning Model.
-    """
-    
-    def __init__(self):
-        self.df: Optional[pd.DataFrame] = None
-        self.X_train = None
-        self.X_test = None
-        self.y_train = None
-        self.y_test = None
-        self.model = None
-        self.scaler = StandardScaler()
-        
-        # Buat folder artifacts jika belum ada
-        ModelConfig.ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Trainer diinisialisasi. Artifacts akan disimpan di: {ModelConfig.ARTIFACTS_DIR}")
-
-    def load_and_split_data(self) -> None:
-        """
-        Memuat data, memisahkan fitur & target, melakukan split, dan scaling.
-        PENTING: Scaling dilakukan SETELAH split untuk mencegah Data Leakage.
-        """
-        if not ModelConfig.DATA_PATH.exists():
-            logger.critical(f"Data tidak ditemukan di: {ModelConfig.DATA_PATH}")
-            sys.exit(1)
-            
-        logger.info("Memuat dataset...")
-        self.df = pd.read_csv(ModelConfig.DATA_PATH)
-        
-        # Definisi Target
-        target_col = 'default'
-        if target_col not in self.df.columns:
-            raise ValueError(f"Kolom target '{target_col}' tidak ditemukan dalam dataset.")
-            
-        # Pisahkan X (Features) dan y (Target)
-        X = self.df.drop(columns=[target_col], errors='ignore')
-        y = self.df[target_col]
-        
-        logger.info(f"Dimensi Fitur: {X.shape}, Target Distribution: {y.value_counts().to_dict()}")
-
-        # Train-Test Split (Stratified agar proporsi churn terjaga)
-        logger.info("Membagi data menjadi Train dan Test Set...")
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            X, y, 
-            test_size=ModelConfig.TEST_SIZE, 
-            random_state=ModelConfig.RANDOM_STATE, 
-            stratify=y
-        )
-        
-        # Scaling (Standardization)
-        logger.info("Melakukan Scaling fitur (StandardScaler)...")
-        # Fit hanya pada TRAIN, Transform pada TRAIN dan TEST
-        self.X_train = self.scaler.fit_transform(self.X_train)
-        self.X_test = self.scaler.transform(self.X_test)
-        
-        # Apply SMOTE to Training Data (Handle Imbalance)
-        logger.info("Menerapkan SMOTE untuk menangani Imbalanced Data...")
-        smote = SMOTE(random_state=ModelConfig.RANDOM_STATE)
-        self.X_train, self.y_train = smote.fit_resample(self.X_train, self.y_train)
-        logger.info(f"Distribusi Target setelah SMOTE: {self.y_train.value_counts().to_dict()}")
-
-        # Simpan Scaler (Penting untuk tahap Deployment/Serving nanti)
-        joblib.dump(self.scaler, ModelConfig.SCALER_SAVE_PATH)
-        logger.info(f"Scaler tersimpan di: {ModelConfig.SCALER_SAVE_PATH}")
-
-    def build_model(self) -> None:
-        """
-        Membangun arsitektur Neural Network (Multilayer Perceptron).
-        Arsitektur: Input -> Dense(64) -> Dropout -> Dense(32) -> Output(Sigmoid)
-        """
-        input_dim = self.X_train.shape[1]
-        logger.info(f"Membangun model Deep Learning dengan input dimension: {input_dim}...")
-        
-        self.model = Sequential([
-            # Hidden Layer 1: Cukup besar untuk menangkap pola
+    def build_dnn_model():
+        model = Sequential([
             Dense(64, activation='relu', input_shape=(input_dim,)),
-            BatchNormalization(), # Menstabilkan learning
-            Dropout(0.3),         # Mencegah overfitting (mematikan 30% neuron secara acak)
-            
-            # Hidden Layer 2: Mengerucut
+            BatchNormalization(),
+            Dropout(0.3),
             Dense(32, activation='relu'),
             Dropout(0.2),
-            
-            # Output Layer: 1 Neuron untuk Binary Classification (0 s/d 1)
             Dense(1, activation='sigmoid')
         ])
-        
-        optimizer = Adam(learning_rate=ModelConfig.LEARNING_RATE)
-        
-        self.model.compile(
+        optimizer = Adam(learning_rate=0.001)
+        model.compile(
             optimizer=optimizer,
-            loss='binary_crossentropy', # Wajib untuk binary classification
-            metrics=[
-                'accuracy', 
-                tf.keras.metrics.AUC(name='auc'),
-                tf.keras.metrics.Recall(name='recall'),
-                tf.keras.metrics.Precision(name='precision')
-            ]
+            loss='binary_crossentropy',
+            metrics=['accuracy', 'AUC', 'Recall', 'Precision']
         )
-        
-        self.model.summary(print_fn=logger.info)
+        return model
 
-    def train(self) -> None:
-        """
-        Melatih model dengan Callbacks (EarlyStopping) dan Class Weights.
-        """
-        if self.model is None:
-            raise ValueError("Model belum dibangun. Jalankan build_model() dulu.")
-            
-        logger.info("Memulai Training Model...")
+    # 4. MLFLOW RUN
+    # Mengaktifkan Autologging untuk TensorFlow/Keras
+    mlflow.tensorflow.autolog(log_models=True, log_datasets=False)
+
+    with mlflow.start_run(run_name="Baseline_DNN_Caleb"):
+        print("MLflow Run Started...")
+        
+        # Build Model
+        model = build_dnn_model()
         
         # Callbacks
         callbacks = [
-            # Berhenti jika val_loss tidak membaik setelah 5 epoch (Patience)
-            EarlyStopping(monitor='val_loss', patience=ModelConfig.PATIENCE, restore_best_weights=True),
-            # Menyimpan model terbaik selama proses training (checkpointing)
-            ModelCheckpoint(filepath=str(ModelConfig.MODEL_SAVE_PATH), monitor='val_loss', save_best_only=True)
+            EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
         ]
-        
-        # Compute Class Weights
-        # Meskipun sudah pakai SMOTE, class weights tetap berguna untuk kestabilan loss
-        class_weights = compute_class_weight(
-            class_weight='balanced',
-            classes=np.unique(self.y_train),
-            y=self.y_train
-        )
-        class_weight_dict = dict(enumerate(class_weights))
-        logger.info(f"Class Weights digunakan: {class_weight_dict}")
 
-        history = self.model.fit(
-            self.X_train, self.y_train,
-            validation_data=(self.X_test, self.y_test),
-            epochs=ModelConfig.EPOCHS,
-            batch_size=ModelConfig.BATCH_SIZE,
+        # Training
+        print("Training model...")
+        history = model.fit(
+            X_train, y_train,
+            validation_data=(X_test, y_test),
+            epochs=50,
+            batch_size=32,
             callbacks=callbacks,
             class_weight=class_weight_dict,
             verbose=1
         )
-        
-        self._plot_history(history)
 
-    def _plot_history(self, history) -> None:
-        """
-        Helper function untuk visualisasi kurva Loss, Accuracy, dan AUC.
-        """
-        acc = history.history['accuracy']
-        val_acc = history.history['val_accuracy']
-        loss = history.history['loss']
-        val_loss = history.history['val_loss']
-        auc = history.history['auc']
-        val_auc = history.history['val_auc']
-        epochs_range = range(len(acc))
+        # 5. SAVING ARTIFACTS LOCALLY & LOGGING TO MLFLOW
+        # Kita buat folder artifacts lokal dulu seperti di contoh
+        local_artifact_dir = os.path.join("artifacts", "model_output")
 
-        plt.figure(figsize=(15, 5))
-        
-        # Plot Accuracy
-        plt.subplot(1, 3, 1)
-        plt.plot(epochs_range, acc, label='Training Accuracy')
-        plt.plot(epochs_range, val_acc, label='Validation Accuracy')
-        plt.legend(loc='lower right')
-        plt.title('Training and Validation Accuracy')
-        
-        # Plot Loss
-        plt.subplot(1, 3, 2)
-        plt.plot(epochs_range, loss, label='Training Loss')
-        plt.plot(epochs_range, val_loss, label='Validation Loss')
-        plt.legend(loc='upper right')
-        plt.title('Training and Validation Loss')
+        # Bersihkan folder jika sudah ada (agar fresh)
+        if os.path.exists(local_artifact_dir):
+            shutil.rmtree(local_artifact_dir)
+        os.makedirs(local_artifact_dir, exist_ok=True)
 
-        # Plot AUC
-        plt.subplot(1, 3, 3)
-        plt.plot(epochs_range, auc, label='Training AUC')
-        plt.plot(epochs_range, val_auc, label='Validation AUC')
-        plt.legend(loc='lower right')
-        plt.title('Training and Validation AUC')
+        # Save Keras Model (.h5)
+        model_save_path = os.path.join(local_artifact_dir, "model.h5")
+        model.save(model_save_path)
+        print(f"Model tersimpan lokal di: {model_save_path}")
+
+        # Save Scaler (.pkl) -> PENTING: Scaler wajib satu paket dengan model
+        scaler_save_path = os.path.join(local_artifact_dir, "scaler.pkl")
+        joblib.dump(scaler, scaler_save_path)
+        print(f"Scaler tersimpan lokal di: {scaler_save_path}")
         
-        plt.tight_layout()
-        plt.savefig(ModelConfig.HISTORY_PLOT_PATH)
+        # Generate & Save Training Plot
+        plt.figure(figsize=(10, 6))
+        plt.plot(history.history['loss'], label='Train Loss')
+        plt.plot(history.history['val_loss'], label='Val Loss')
+        plt.title('Training History')
+        plt.legend()
+        plot_path = os.path.join(local_artifact_dir, "loss_curve.png")
+        plt.savefig(plot_path)
         plt.close()
-        logger.info(f"Grafik training history tersimpan di: {ModelConfig.HISTORY_PLOT_PATH}")
 
-    def evaluate(self) -> None:
-        """
-        Evaluasi performa model pada Test Set.
-        """
-        logger.info("Mengevaluasi model pada Test Set...")
-        
-        # Prediksi Probabilitas
-        y_pred_probs = self.model.predict(self.X_test)
-        # Thresholding (biasanya 0.5)
+        # Upload seluruh folder artifacts lokal ke MLflow Server
+        print("Mengupload artifacts ke MLflow Server...")
+        mlflow.log_artifacts(local_artifact_dir, artifact_path="custom_artifacts")
+
+        # 6. EVALUASI AKHIR
+        print("\n=== Evaluasi Model (Test Set) ===")
+        y_pred_probs = model.predict(X_test)
         y_pred = (y_pred_probs > 0.5).astype(int)
-        
-        # Metrics
-        print("\n" + "="*50)
-        print("Laporan Klasifikasi (Test Set):")
-        print(classification_report(self.y_test, y_pred))
-        
-        auc = roc_auc_score(self.y_test, y_pred_probs)
-        print(f"ROC-AUC Score: {auc:.4f}")
-        
-        cm = confusion_matrix(self.y_test, y_pred)
-        print("\nConfusion Matrix:")
-        print(cm)
-        print("="*50 + "\n")
 
-    def run(self):
-        """
-        Orkestrasi seluruh pipeline.
-        """
-        try:
-            self.load_and_split_data()
-            self.build_model()
-            self.train()
-            self.evaluate()
-            logger.info("=== BASELINE MODELLING SELESAI ===")
-        except Exception as e:
-            logger.critical(f"Terjadi error fatal: {e}")
-            raise
+        report = classification_report(y_test, y_pred)
+        auc_score = roc_auc_score(y_test, y_pred_probs)
+        
+        print(report)
+        print(f"ROC-AUC Score: {auc_score:.4f}")
+        
+        # Log manual metrics tambahan jika perlu (Autolog sudah handle sebagian besar)
+        mlflow.log_metric("test_roc_auc", auc_score)
 
 if __name__ == "__main__":
-    trainer = ChurnBaselineTrainer()
-    trainer.run()
+    train_model()
