@@ -1,39 +1,47 @@
 """
-modelling_tuning.py
--------------------
-Modul ini menjalankan Hyperparameter Tuning untuk Deep Learning Model menggunakan TensorFlow.
-Seluruh hasil eksperimen dilacak menggunakan MLflow (ver 2.19.0).
-Script ini otomatis memilih model terbaik berdasarkan metric validasi dan menyimpan artifacts.
+modelling_tuning_mlflow.py
+--------------------------
+Modul Hyperparameter Tuning untuk Deep Learning yang di-refactor menjadi gaya Functional.
+Dilengkapi dengan Advanced Logging MLflow (Plots, Metrics, Artifacts) mirip standar Scikit-Learn.
 
-Features:
-- Custom Grid Search Loop for Deep Learning.
-- MLflow Tracking (Params, Metrics, Artifacts).
-- Prevention of Data Leakage (Split-then-Scale).
-- Automatic Best Model Selection.
-- Imbalanced Data Handling (SMOTE + Class Weights).
+Logic:
+1. Load Data -> Split -> Scale -> SMOTE (Original Logic).
+2. Custom Grid Search Loop (untuk mencari best params Deep Learning).
+3. Logging 'Best Model' secara komprehensif ke MLflow.
 
-Environment: Python 3.12.7 | MLflow 2.19.0
-Author: Caleb Anthony (Automated by System)
+Changes:
+- Functional Programming Style.
+- Integrated Scikit-plot & Seaborn visualization.
+- Manual Metric Logging (Train vs Test).
+
+Author: Caleb Anthony
 Date: 2025-10-30
 """
 
-import os
-import sys
-import logging
-import joblib
 import pandas as pd
 import numpy as np
 import tensorflow as tf
 import mlflow
 import mlflow.tensorflow
-import dagshub
+import mlflow.sklearn
+import os
+import shutil
+import joblib
+import logging
+import sys
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scikitplot as skplt
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
 from itertools import product
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score, f1_score, log_loss, precision_score, 
+    recall_score, roc_auc_score, ConfusionMatrixDisplay, 
+    PrecisionRecallDisplay, RocCurveDisplay, classification_report
+)
 from sklearn.utils.class_weight import compute_class_weight
 from imblearn.over_sampling import SMOTE
 
@@ -42,227 +50,236 @@ from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
 
-# --- KONFIGURASI LOGGING ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+# --- KONFIGURASI ENVIRONMENT & AUTH ---
+# Menggunakan konfigurasi repo Anda (CalebAnthony) namun dengan style setup environment variable
+os.environ['MLFLOW_TRACKING_USERNAME'] = 'calebevan2208' # Sesuaikan dengan DagsHub User Anda
+os.environ['MLFLOW_TRACKING_PASSWORD'] = '2205072872dc0f9aaf561b740bc01685c6417cca' # Masukkan token jika perlu
+REMOTE_URI = 'https://dagshub.com/calebevan2208/SMSML_CalebAnthony.mlflow' 
+
+mlflow.set_tracking_uri(REMOTE_URI)
+mlflow.set_experiment("CalebAnthony_Churn_DeepLearning_v1")
+
+# --- SETUP LOGGING CONSOLE ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- KONFIGURASI PROJECT & MLFLOW ---
-class TuningConfig:
-    # Paths
+def build_model(params, input_dim):
+    """Helper function untuk menyusun arsitektur Keras."""
+    model = Sequential([
+        Dense(params['units_layer1'], activation='relu', input_shape=(input_dim,)),
+        BatchNormalization(),
+        Dropout(params['dropout_rate']),
+        Dense(params['units_layer2'], activation='relu'),
+        Dropout(params['dropout_rate']),
+        Dense(1, activation='sigmoid')
+    ])
+    
+    optimizer = Adam(learning_rate=params['learning_rate'])
+    model.compile(
+        optimizer=optimizer, 
+        loss='binary_crossentropy', 
+        metrics=['accuracy']
+    )
+    return model
+
+def train_with_tuning():
+    logger.info("=== Memulai Pipeline Tuning Deep Learning ===")
+
+    # 1. SETUP PATH & DATA
     BASE_DIR = Path(__file__).resolve().parent
-    # Mengambil data dari preprocessing yang sudah bersih
     DATA_PATH = BASE_DIR.parent / 'Eksperimen_SML_CalebAnthony' / 'churn_preprocessing' / 'clean_data.csv'
-    ARTIFACTS_DIR = BASE_DIR / 'artifacts'
     
-    # MLflow Settings
-    EXPERIMENT_NAME = "CalebAnthony_Churn_DeepLearning_v1"
+    if not DATA_PATH.exists():
+        logger.error(f"Data tidak ditemukan di: {DATA_PATH}")
+        return
+
+    df = pd.read_csv(DATA_PATH)
+    target_col = 'default'
+    X = df.drop(columns=[target_col], errors='ignore')
+    y = df[target_col]
+
+    # Split (Stratified)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    # Scaling
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    # SMOTE (Handling Imbalance)
+    smote = SMOTE(random_state=42)
+    X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
+
+    # Class Weights
+    class_weights = compute_class_weight(
+        class_weight='balanced',
+        classes=np.unique(y_train_resampled),
+        y=y_train_resampled
+    )
+    class_weight_dict = dict(enumerate(class_weights))
+
+    # 2. GRID SEARCH MANUAL (Custom Loop)
+    # Karena Keras tidak support GridSearchCV scikit-learn secara native tanpa wrapper,
+    # kita gunakan loop sederhana untuk mencari parameter terbaik.
     
-    # Tuning Grid (Search Space)
-    # Sense bisa menambah kombinasi di sini
-    PARAM_GRID = {
+    param_grid = {
         'units_layer1': [64, 128],
         'units_layer2': [32, 64],
         'dropout_rate': [0.2, 0.3],
-        'learning_rate': [0.001, 0.0001],
+        'learning_rate': [0.001], # Disederhanakan untuk demo
         'batch_size': [32]
     }
     
-    # Static Params
-    EPOCHS = 20 # Maksimum epoch per trial
-    TEST_SIZE = 0.2
-    RANDOM_STATE = 42
-
-class ChurnTuner:
-    """
-    Kelas Orchestrator untuk Tuning dan Tracking MLflow.
-    """
+    keys, values = zip(*param_grid.items())
+    param_combinations = [dict(zip(keys, v)) for v in product(*values)]
     
-    def __init__(self):
-        self.X_train = None
-        self.X_test = None
-        self.y_train = None
-        self.y_test = None
-        self.scaler = StandardScaler()
-        self.best_accuracy = 0.0
-        self.best_model = None
-        
-        # Setup Output
-        TuningConfig.ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-        
-        # Setup MLflow
-        dagshub.init(repo_owner='calebevan2208', repo_name='SMSML_CalebAnthony', mlflow=True)
-        mlflow.set_experiment(TuningConfig.EXPERIMENT_NAME)
-        logger.info(f"MLflow Experiment set to: {TuningConfig.EXPERIMENT_NAME}")
+    logger.info(f"Total kombinasi hyperparameter: {len(param_combinations)}")
+    
+    best_score = 0.0
+    best_model = None
+    best_params = None
+    best_history = None
 
-    def load_and_prepare_data(self) -> None:
-        """
-        Load data, split, dan scale.
-        PENTING: Mencegah Data Leakage dengan fit scaler hanya di training data.
-        """
-        if not TuningConfig.DATA_PATH.exists():
-            logger.critical(f"Data source not found at: {TuningConfig.DATA_PATH}")
-            sys.exit(1)
-            
-        logger.info("Loading dataset...")
-        df = pd.read_csv(TuningConfig.DATA_PATH)
+    # Loop Tuning
+    for i, params in enumerate(param_combinations):
+        print(f"Testing kombinasi {i+1}/{len(param_combinations)}: {params}")
         
-        target_col = 'default'
-        if target_col not in df.columns:
-            raise ValueError(f"Target column '{target_col}' not found.")
-            
-        X = df.drop(columns=[target_col], errors='ignore')
-        y = df[target_col]
+        model = build_model(params, input_dim=X_train.shape[1])
+        early_stop = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
         
-        # Split
-        logger.info("Splitting dataset...")
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            X, y, test_size=TuningConfig.TEST_SIZE, random_state=TuningConfig.RANDOM_STATE, stratify=y
+        history = model.fit(
+            X_train_resampled, y_train_resampled,
+            validation_data=(X_test, y_test),
+            epochs=20, # Epochs per trial
+            batch_size=params['batch_size'],
+            callbacks=[early_stop],
+            class_weight=class_weight_dict,
+            verbose=0
         )
         
-        # Scale
-        logger.info("Scaling features...")
-        self.X_train = self.scaler.fit_transform(self.X_train)
-        self.X_test = self.scaler.transform(self.X_test)
+        # Evaluasi sederhana untuk seleksi
+        y_pred_probs = model.predict(X_test, verbose=0)
+        y_pred = (y_pred_probs > 0.5).astype(int)
+        current_f1 = f1_score(y_test, y_pred, zero_division=0)
         
-        # Apply SMOTE
-        logger.info("Menerapkan SMOTE...")
-        smote = SMOTE(random_state=TuningConfig.RANDOM_STATE)
-        self.X_train, self.y_train = smote.fit_resample(self.X_train, self.y_train)
-        
-        # Simpan Scaler untuk Production
-        scaler_path = TuningConfig.ARTIFACTS_DIR / 'scaler_production.pkl'
-        joblib.dump(self.scaler, scaler_path)
-        logger.info(f"Production Scaler saved to: {scaler_path}")
+        if current_f1 > best_score:
+            best_score = current_f1
+            best_model = model
+            best_params = params
+            best_history = history
+            print(f"  -> New Best Model Found! F1: {current_f1:.4f}")
 
-    def build_model(self, params: Dict[str, Any], input_dim: int) -> Sequential:
-        """
-        Membuat arsitektur model secara dinamis berdasarkan parameter.
-        """
-        model = Sequential()
-        
-        # Layer 1
-        model.add(Dense(params['units_layer1'], activation='relu', input_shape=(input_dim,)))
-        model.add(BatchNormalization())
-        model.add(Dropout(params['dropout_rate']))
-        
-        # Layer 2
-        model.add(Dense(params['units_layer2'], activation='relu'))
-        model.add(Dropout(params['dropout_rate']))
-        
-        # Output Layer (Binary)
-        model.add(Dense(1, activation='sigmoid'))
-        
-        optimizer = Adam(learning_rate=params['learning_rate'])
-        
-        model.compile(
-            optimizer=optimizer,
-            loss='binary_crossentropy',
-            metrics=[
-                'accuracy', 
-                tf.keras.metrics.AUC(name='auc'),
-                tf.keras.metrics.Recall(name='recall')
-            ]
-        )
-        return model
+    logger.info(f"Tuning Selesai. Best F1: {best_score:.4f}")
+    logger.info(f"Best Params: {best_params}")
 
-    def run_tuning(self) -> None:
-        """
-        Menjalankan loop eksperimen berdasarkan kombinasi parameter (Grid Search Manual).
-        Setiap kombinasi akan dicatat sebagai satu 'Run' di MLflow.
-        """
-        logger.info("Starting Hyperparameter Tuning...")
+    # 3. LOGGING BEST MODEL TO MLFLOW (Detailed Version)
+    # Kita buka Run baru khusus untuk menyimpan 'Best Model' beserta semua plot canggihnya
+    
+    # Generate Predictions untuk Logging
+    y_train_prob = best_model.predict(X_train_resampled, verbose=0).ravel()
+    y_train_pred = (y_train_prob > 0.5).astype(int)
+    
+    y_test_prob = best_model.predict(X_test, verbose=0).ravel()
+    y_test_pred = (y_test_prob > 0.5).astype(int)
+
+    with mlflow.start_run(run_name="Best_DeepLearning_Model"):
+        mlflow.log_params(best_params)
         
-        # Generate semua kombinasi parameter
-        keys, values = zip(*TuningConfig.PARAM_GRID.items())
-        param_combinations = [dict(zip(keys, v)) for v in product(*values)]
-        
-        logger.info(f"Total combinations to test: {len(param_combinations)}")
-        
-        for i, params in enumerate(param_combinations):
-            run_name = f"Run_{i+1}_lr_{params['learning_rate']}_units_{params['units_layer1']}"
-            logger.info(f"--- Executing {run_name} ---")
+        # A. Manual Logging Metrics (Train vs Test)
+        metrics = {
+            "training_accuracy": accuracy_score(y_train_resampled, y_train_pred),
+            "training_f1": f1_score(y_train_resampled, y_train_pred),
+            "training_log_loss": log_loss(y_train_resampled, y_train_prob),
+            "training_roc_auc": roc_auc_score(y_train_resampled, y_train_prob),
             
-            with mlflow.start_run(run_name=run_name):
-                # 1. Log Hyperparameters
-                mlflow.log_params(params)
-                mlflow.log_param("epochs", TuningConfig.EPOCHS)
-                
-                # 2. Build & Train Model
-                model = self.build_model(params, self.X_train.shape[1])
-                
-                early_stop = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
-                
-                # Class Weights (Stabilization)
-                class_weights = compute_class_weight(
-                    class_weight='balanced',
-                    classes=np.unique(self.y_train),
-                    y=self.y_train
-                )
-                class_weight_dict = dict(enumerate(class_weights))
-                
-                history = model.fit(
-                    self.X_train, self.y_train,
-                    validation_data=(self.X_test, self.y_test),
-                    epochs=TuningConfig.EPOCHS,
-                    batch_size=params['batch_size'],
-                    callbacks=[early_stop],
-                    class_weight=class_weight_dict,
-                    verbose=0 # Silent training agar log tidak penuh
-                )
-                
-                # 3. Evaluate
-                y_pred_prob = model.predict(self.X_test)
-                y_pred = (y_pred_prob > 0.5).astype(int)
-                
-                # Metrics Calculation
-                acc = accuracy_score(self.y_test, y_pred)
-                f1 = f1_score(self.y_test, y_pred, zero_division=0)
-                auc = roc_auc_score(self.y_test, y_pred_prob)
-                rec = recall_score(self.y_test, y_pred, zero_division=0)
-                
-                logger.info(f"   Result -> Acc: {acc:.4f}, F1: {f1:.4f}, AUC: {auc:.4f}, Recall: {rec:.4f}")
-                
-                # 4. Log Metrics to MLflow
-                mlflow.log_metrics({
-                    "test_accuracy": acc,
-                    "test_f1_score": f1,
-                    "test_auc": auc,
-                    "test_recall": rec,
-                    "final_train_loss": history.history['loss'][-1],
-                    "final_val_loss": history.history['val_loss'][-1]
-                })
-                
-                # 5. Log Model to MLflow (Artifacts)
-                # MLflow 2.19+ supports logging tensorflow/keras models directly
-                mlflow.tensorflow.log_model(model, "model")
-                
-                # 6. Best Model Tracking Logic (Changed to F1-Score)
-                # Menggunakan F1-Score sebagai metric utama untuk seleksi model
-                if f1 > self.best_accuracy: # Variable name is best_accuracy but used for best score
-                    self.best_accuracy = f1
-                    self.best_model = model
-                    logger.info(f"   >>> New Best Model Found! (F1-Score: {f1:.4f})")
-                    
-                    # Simpan 'Best Model' secara lokal untuk kemudahan akses deployment
-                    best_model_path = TuningConfig.ARTIFACTS_DIR / 'best_churn_model.h5'
-                    model.save(best_model_path)
-                    mlflow.log_artifact(str(best_model_path), artifact_path="best_model_file")
+            "test_accuracy": accuracy_score(y_test, y_test_pred),
+            "test_f1": f1_score(y_test, y_test_pred),
+            "test_log_loss": log_loss(y_test, y_test_prob),
+            "test_precision": precision_score(y_test, y_test_pred),
+            "test_recall": recall_score(y_test, y_test_pred),
+            "test_roc_auc": roc_auc_score(y_test, y_test_prob)
+        }
+        
+        for m_name, m_val in metrics.items():
+            mlflow.log_metric(m_name, m_val)
+            
+        # B. Saving Artifacts Locally First
+        artifact_dir = os.path.join("artifacts", "best_model_artifacts")
+        if os.path.exists(artifact_dir):
+            shutil.rmtree(artifact_dir)
+        os.makedirs(artifact_dir, exist_ok=True)
+        
+        # Save Scaler (Critical!)
+        joblib.dump(scaler, os.path.join(artifact_dir, "scaler.pkl"))
 
-    def finish(self):
-        """Final summary."""
-        logger.info("="*50)
-        logger.info("TUNING COMPLETED")
-        logger.info(f"Best Score (F1) achieved: {self.best_accuracy:.4f}")
-        logger.info(f"Check MLflow UI for details. Run: 'mlflow ui'")
-        logger.info("="*50)
+        # C. PLOTTING (Adapted for Keras / Non-Sklearn Estimators)
+        
+        # 1. Confusion Matrix (Test Set)
+        fig, ax = plt.subplots()
+        ConfusionMatrixDisplay.from_predictions(y_test, y_test_pred, ax=ax, cmap='Blues')
+        plt.title("Confusion Matrix (Test Set)")
+        plt.savefig("confusion_matrix.png")
+        mlflow.log_artifact("confusion_matrix.png")
+        plt.close()
+
+        # 2. ROC Curve
+        fig, ax = plt.subplots()
+        RocCurveDisplay.from_predictions(y_test, y_test_prob, ax=ax, name="Best Model")
+        plt.title("ROC Curve")
+        plt.savefig("roc_curve.png")
+        mlflow.log_artifact("roc_curve.png")
+        plt.close()
+
+        # 3. Precision-Recall Curve
+        fig, ax = plt.subplots()
+        PrecisionRecallDisplay.from_predictions(y_test, y_test_prob, ax=ax, name="Best Model")
+        plt.title("Precision-Recall Curve")
+        plt.savefig("pr_curve.png")
+        mlflow.log_artifact("pr_curve.png")
+        plt.close()
+
+        # 4. Training History (Pengganti Feature Importance untuk Deep Learning)
+        # Deep Learning tidak punya feature importance langsung seperti Random Forest
+        fig, ax = plt.subplots(figsize=(10, 6))
+        plt.plot(best_history.history['loss'], label='Train Loss')
+        plt.plot(best_history.history['val_loss'], label='Val Loss')
+        plt.plot(best_history.history['accuracy'], label='Train Acc')
+        plt.plot(best_history.history['val_accuracy'], label='Val Acc')
+        plt.title("Learning Curves (Loss & Accuracy)")
+        plt.legend()
+        plt.savefig("learning_curve.png")
+        mlflow.log_artifact("learning_curve.png")
+        plt.close()
+
+        # 5. Lift Curve (Scikit-plot)
+        # Membutuhkan format probabilitas (N, 2) untuk class 0 dan 1
+        y_probas_formatted = np.column_stack((1 - y_test_prob, y_test_prob))
+        
+        fig, ax = plt.subplots()
+        skplt.metrics.plot_lift_curve(y_test, y_probas_formatted, ax=ax)
+        plt.title("Lift Curve")
+        plt.savefig("lift_curve.png")
+        mlflow.log_artifact("lift_curve.png")
+        plt.close()
+
+        # D. Save Model & Artifacts Folder
+        # Save Keras Model
+        best_model.save(os.path.join(artifact_dir, "model.h5"))
+        
+        # Log Artifact folder content
+        mlflow.log_artifacts(artifact_dir, artifact_path="model_output")
+        
+        # Log Keras Model Native
+        mlflow.tensorflow.log_model(best_model, "keras_model")
+        
+        # Cleanup Local
+        shutil.rmtree(artifact_dir)
+        
+        print("\n=== Evaluasi Akhir (Test Set) ===")
+        print(classification_report(y_test, y_test_pred))
+        print(f"Artifacts logged to: {REMOTE_URI}")
 
 if __name__ == "__main__":
-    tuner = ChurnTuner()
-    tuner.load_and_prepare_data()
-    tuner.run_tuning()
-    tuner.finish()
+    train_with_tuning()
