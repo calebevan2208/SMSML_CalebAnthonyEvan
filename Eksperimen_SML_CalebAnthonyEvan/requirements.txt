@@ -1,0 +1,16 @@
+# --- Core Data Processing (Compatible with Python 3.12.7) ---
+pandas>=2.2.0        # Versi 2.2+ stabil untuk Python 3.12
+numpy>=1.26.0        # Versi 1.26+ diperlukan untuk kompatibilitas MLflow & Py3.12
+
+# --- Data Ingestion ---
+requests>=2.31.0     # Untuk download data Google Sheets
+
+# --- Visualization (EDA) ---
+matplotlib>=3.8.0    # Versi 3.8+ support Python 3.12
+seaborn>=0.13.0      # Visualisasi statistik modern
+
+# --- Preprocessing Utils ---
+scikit-learn>=1.4.0  # Diperlukan untuk LabelEncoder di script otomasi
+
+# --- Tracking & Logging (User Request) ---
+mlflow==2.19.0       # Strict versioning sesuai permintaan Sense
