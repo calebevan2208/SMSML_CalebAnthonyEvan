@@ -1,0 +1,25 @@
+# --- Core Data Manipulation (Python 3.12 Compatible) ---
+numpy>=1.26.4
+pandas>=2.2.0
+requests>=2.31.0
+
+# --- Deep Learning Framework ---
+# Menggunakan versi 2.16+ untuk dukungan penuh Python 3.12
+# dan integrasi stabil dengan Keras 3.x
+tensorflow>=2.16.1
+
+# --- Machine Learning Utilities ---
+scikit-learn>=1.4.0   # Untuk train_test_split, StandardScaler, metrics
+joblib>=1.3.2         # Untuk menyimpan scaler.pkl
+
+# --- Experiment Tracking (User Constraint) ---
+mlflow==2.19.0        # Strict version sesuai permintaan
+
+# --- Visualization for Artifacts ---
+matplotlib>=3.8.0     # Untuk plot training history
+seaborn>=0.13.0       # Untuk plot confusion matrix yang estetik
+
+# --- Optional/System Utils ---
+# tf-keras sering dibutuhkan secara eksplisit pada TF versi baru
+tf-keras>=2.16.0
+dagshub
