@@ -44,11 +44,20 @@ LOCAL_MLRUNS_URI = "file:./mlruns"
 # Prefer remote server when available (common in dev with `mlflow server --port 5000`),
 # but gracefully degrade to a local `mlruns` folder so the script still runs in CI/dev containers.
 mlflow.set_tracking_uri(MLFLOW_SERVER_URI)
+os.makedirs("mlruns", exist_ok=True)
+
 try:
+    mlflow.set_tracking_uri(MLFLOW_SERVER_URI)
     mlflow.set_experiment("Churn_Prediction_Deep_Learning")
+
+    # test real connection
+    with mlflow.start_run():
+        mlflow.log_param("healthcheck", "ok")
+
 except Exception as e:
-    print(f"Warning: Could not connect to MLflow server at {MLFLOW_SERVER_URI} ({e}). Falling back to local 'mlruns' folder.")
-    mlflow.set_tracking_uri(LOCAL_MLRUNS_URI)
+    print(f"[MLFLOW FALLBACK] {e}")
+
+    mlflow.set_tracking_uri("file:./mlruns")
     mlflow.set_experiment("Churn_Prediction_Deep_Learning")
 
 def train_model():
@@ -209,3 +218,4 @@ def train_model():
 
 if __name__ == "__main__":
     train_model()
+
