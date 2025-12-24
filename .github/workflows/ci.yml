@@ -24,7 +24,7 @@ jobs:
       # Saya juga tambahkan 'scikit-plot' karena script visualisasi membutuhkannya
       - name: Install MLflow, DagsHub & Libraries
         run: |
-          pip install mlflow dagshub pandas scikit-learn matplotlib seaborn scikit-plot tensorflow
+          pip install mlflow dagshub pandas scikit-learn matplotlib seaborn scikit-plot tensorflow imbalanced-learn
 
       # 4. Run MLflow Project (Training)
       - name: Run MLflow Project & Connect DagsHub Repository
