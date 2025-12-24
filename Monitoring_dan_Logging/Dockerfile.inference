@@ -14,7 +14,7 @@ COPY requirements.inference.txt ./requirements.inference.txt
 RUN python -m pip install --upgrade pip && pip install -r requirements.inference.txt
 
 # Copy inference script
-COPY 7.inference.py ./7.inference.py
+COPY Monitoring_dan_Logging/7.inference.py ./7.inference.py
 
 # Expose port
 EXPOSE 5001
