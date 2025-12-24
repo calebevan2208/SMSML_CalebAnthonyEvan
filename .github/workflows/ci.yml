@@ -1,18 +1,9 @@
-name: Repository CI
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
-
 jobs:
   checks:
     name: Build, Train, and Deploy
     runs-on: ubuntu-latest
     
-    # Environment Variables untuk Docker (Biar VS Code Aman)
+    # Environment Variables
     env:
       DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKER_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -22,11 +13,13 @@ jobs:
         python-version: ["3.12"]
 
     steps:
-      # 1. Checkout
+      # ... (Langkah 1 sampai 7 TIDAK BERUBAH, biarkan saja) ...
+      
+      # 1. Run actions/checkout@v3
       - name: Run actions/checkout@v3
         uses: actions/checkout@v3
 
-      # 2. Setup Python
+      # 2. Set up Python 3.12.7
       - name: Set up Python 3.12.7
         uses: actions/setup-python@v4
         with:
@@ -38,7 +31,6 @@ jobs:
           echo "Checking Environment..."
           python --version
           pip --version
-          ls -la | head -n 20
 
       # 4. Install dependencies
       - name: Install dependencies
@@ -47,14 +39,13 @@ jobs:
           if [ -f Eksperimen_SML_CalebAnthonyEvan/requirements.txt ]; then python -m pip install -r Eksperimen_SML_CalebAnthonyEvan/requirements.txt; fi
           if [ -f Monitoring_dan_Logging/requirements.txt ]; then python -m pip install -r Monitoring_dan_Logging/requirements.txt; fi
 
-      # 5. Run MLflow
+      # 5. Run mlflow project
       - name: Run mlflow project
         run: |
           python -m pip install mlflow
-          # Menjalankan training (ignore error dengan || true agar pipeline tetap jalan)
           mlflow run Workflow-CI/MLProject -Pepochs=1 -Pbatch_size=32 || true
 
-      # 6. Get run_id
+      # 6. Get latest MLflow run_id
       - name: Get latest MLflow run_id
         id: get_run
         run: |
@@ -62,37 +53,44 @@ jobs:
           echo "latest_run=$latest" >> $GITHUB_OUTPUT
           echo "Latest run found: $latest"
 
-      # 7. Install Python dependencies (Model specific)
+      # 7. Install Python dependencies
       - name: Install Python dependencies
         run: |
           if [ -f Membangun_model/requirements.txt ]; then python -m pip install -r Membangun_model/requirements.txt; fi
           if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
 
-      # ==========================================================
-      # 8. UPLOAD TO GITHUB ARTIFACTS (PENGGANTI GOOGLE DRIVE)
-      # ==========================================================
+      # 8. Upload Artifacts (Success)
       - name: Upload ML Artifacts to GitHub
         uses: actions/upload-artifact@v4
         with:
-          # Nama file zip nanti saat didownload
           name: model-run-${{ github.run_id }}
-          # Path folder yang mau diupload (bisa banyak)
           path: |
             mlruns/
             artifacts/
-          # Berapa lama file disimpan (opsional, default 90 hari)
           retention-days: 5
 
-      # 9. Build Docker Model
+      # ==========================================================
+      # ⚡ PERBAIKAN UTAMA DISINI (Langkah 9-13)
+      # ==========================================================
+
+      # 9. Convert Repo Name to Lowercase (BARU!)
+      # Docker tidak terima huruf besar. Kita ubah dulu variabelnya.
+      - name: Convert to Lowercase
+        run: |
+          # Mengambil nama repo (misal: SMSML_Caleb...) dan menjadikannya huruf kecil (smsml_caleb...)
+          echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      # 10. Build Docker Model
       - name: Build Docker Model
         uses: docker/build-push-action@v4
         with:
           context: .
           file: ./Monitoring_dan_Logging/Dockerfile.inference
           push: false
-          tags: ${{ github.repository }}:model-${{ github.run_id }}
+          # PERHATIKAN: Kita pakai ${{ env.REPO_LOWER }} bukan ${{ github.repository }}
+          tags: ${{ env.DOCKER_USER }}/${{ env.REPO_LOWER }}:model-${{ github.run_id }}
 
-      # 10. Log in to Docker Hub
+      # 11. Log in to Docker Hub
       - name: Log in to Docker Hub
         if: env.DOCKER_USER != '' && env.DOCKER_TOKEN != ''
         uses: docker/login-action@v2
@@ -100,19 +98,21 @@ jobs:
           username: ${{ env.DOCKER_USER }}
           password: ${{ env.DOCKER_TOKEN }}
 
-      # 11. Tag Docker Image
+      # 12. Tag Docker Image
       - name: Tag Docker Image
         if: env.DOCKER_USER != '' && env.DOCKER_TOKEN != ''
         run: |
-          docker tag ${{ github.repository }}:model-${{ github.run_id }} ${{ env.DOCKER_USER }}/${{ github.repository }}:model-${{ github.run_id }}
+          # Ubah variabel disini juga
+          docker tag ${{ env.DOCKER_USER }}/${{ env.REPO_LOWER }}:model-${{ github.run_id }} ${{ env.DOCKER_USER }}/${{ env.REPO_LOWER }}:model-${{ github.run_id }}
 
-      # 12. Push Docker Image
+      # 13. Push Docker Image
       - name: Push Docker Image
         if: env.DOCKER_USER != '' && env.DOCKER_TOKEN != ''
         run: |
-          docker push ${{ env.DOCKER_USER }}/${{ github.repository }}:model-${{ github.run_id }}
+          # Ubah variabel disini juga
+          docker push ${{ env.DOCKER_USER }}/${{ env.REPO_LOWER }}:model-${{ github.run_id }}
 
-      # 13. Complete job
+      # 14. Complete job
       - name: Complete job
         if: always()
         run: |
