@@ -1,23 +1,28 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
-# Install system deps required for some packages (adjust as needed)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libatlas-base-dev \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
+# Copy requirements & Install
 COPY Monitoring_dan_Logging/requirements.inference.txt ./requirements.txt
-RUN python -m pip install --upgrade pip && pip install -r requirements.inference.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy inference script
+# --- PERBAIKAN DISINI ---
+# Karena model sudah dipindahkan ke root oleh GitHub Actions (Langkah 1),
+# Kita tinggal copy langsung dari root (./model.h5)
+COPY model.h5 ./model.h5
+
+# Copy Inference Script
 COPY Monitoring_dan_Logging/7.inference.py ./7.inference.py
 
-# Expose port
 EXPOSE 5001
 
-# Default command (model mounted to /models)
-CMD ["python", "7.inference.py", "--model", "/models/model.h5", "--port", "5001"]
+CMD ["python", "7.inference.py", "--model", "./model.h5", "--port", "5001"]
