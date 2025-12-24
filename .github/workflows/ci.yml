@@ -39,6 +39,11 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f Eksperimen_SML_CalebAnthonyEvan/requirements.txt ]; then pip install -r Eksperimen_SML_CalebAnthonyEvan/requirements.txt; fi
           if [ -f Monitoring_dan_Logging/requirements.txt ]; then pip install -r Monitoring_dan_Logging/requirements.txt; fi
+      
+      - name: Set MLflow tracking
+        run: |
+          mkdir -p mlruns
+          echo "MLFLOW_TRACKING_URI=file:./mlruns" >> $GITHUB_ENV
 
       # 5. Jalankan MLflow Project
       - name: Run mlflow project
