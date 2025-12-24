@@ -35,6 +35,22 @@ services:
       - 8000:8000
     restart: unless-stopped
 
+  inference:
+    build:
+      context: ./
+      dockerfile: Dockerfile.inference
+    volumes:
+      - ./artifacts/model_output:/models:ro
+    ports:
+      - 5001:5001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      retries: 3
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   prometheus_data:
   grafana_data:
