@@ -12,26 +12,21 @@ jobs:
     name: Build, Train, and Deploy
     runs-on: ubuntu-latest
     
-    # -----------------------------------------------------------
-    # SOLUSI ERROR: Mapping Secrets ke Environment Variables (ENV)
-    # Ini membuat VS Code senang (tidak merah) & kode lebih rapi
-    # -----------------------------------------------------------
+    # Environment Variables untuk Docker (Biar VS Code Aman)
     env:
       DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKER_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      # Variabel lain jika diperlukan di script bash
-      REPO_NAME: ${{ github.repository }} 
 
     strategy:
       matrix:
         python-version: ["3.12"]
 
     steps:
-      # 1. Run actions/checkout@v3
+      # 1. Checkout
       - name: Run actions/checkout@v3
         uses: actions/checkout@v3
 
-      # 2. Set up Python 3.12.7
+      # 2. Setup Python
       - name: Set up Python 3.12.7
         uses: actions/setup-python@v4
         with:
@@ -41,31 +36,28 @@ jobs:
       - name: Check Env
         run: |
           echo "Checking Environment..."
-          echo "Python: $(python --version)"
-          echo "Pip: $(pip --version)"
-          echo "Workspace structure:"
+          python --version
+          pip --version
           ls -la | head -n 20
 
-      # 4. Install dependencies (General)
+      # 4. Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # Cek dan install requirements project
           if [ -f Eksperimen_SML_CalebAnthonyEvan/requirements.txt ]; then python -m pip install -r Eksperimen_SML_CalebAnthonyEvan/requirements.txt; fi
           if [ -f Monitoring_dan_Logging/requirements.txt ]; then python -m pip install -r Monitoring_dan_Logging/requirements.txt; fi
 
-      # 5. Run mlflow project
+      # 5. Run MLflow
       - name: Run mlflow project
         run: |
           python -m pip install mlflow
-          # Menjalankan MLflow Project (tambahkan || true jika ingin ignore error sementara)
+          # Menjalankan training (ignore error dengan || true agar pipeline tetap jalan)
           mlflow run Workflow-CI/MLProject -Pepochs=1 -Pbatch_size=32 || true
 
-      # 6. Get latest MLflow run_id
+      # 6. Get run_id
       - name: Get latest MLflow run_id
         id: get_run
         run: |
-          # Mengambil folder run terakhir berdasarkan waktu modifikasi
           latest=$(ls -1t mlruns/*/* 2>/dev/null | head -n1 || true)
           echo "latest_run=$latest" >> $GITHUB_OUTPUT
           echo "Latest run found: $latest"
@@ -76,20 +68,20 @@ jobs:
           if [ -f Membangun_model/requirements.txt ]; then python -m pip install -r Membangun_model/requirements.txt; fi
           if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
 
-      # 8. Upload to Google Drive
-      - name: Prepare Artifacts for Drive
-        run: |
-          echo "Zipping mlruns folder..."
-          zip -r ml_artifacts.zip mlruns/ artifacts/ 2>/dev/null || echo "No artifacts folder found, zipping only mlruns"
-
-      - name: Upload to Google Drive
-        uses: adityak74/google-drive-upload-git-action@main
+      # ==========================================================
+      # 8. UPLOAD TO GITHUB ARTIFACTS (PENGGANTI GOOGLE DRIVE)
+      # ==========================================================
+      - name: Upload ML Artifacts to GitHub
+        uses: actions/upload-artifact@v4
         with:
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS }} 
-          filename: "ml_artifacts.zip"
-          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
-          name: "ml-artifacts-${{ github.run_id }}.zip"
-          overwrite: "false"
+          # Nama file zip nanti saat didownload
+          name: model-run-${{ github.run_id }}
+          # Path folder yang mau diupload (bisa banyak)
+          path: |
+            mlruns/
+            artifacts/
+          # Berapa lama file disimpan (opsional, default 90 hari)
+          retention-days: 5
 
       # 9. Build Docker Model
       - name: Build Docker Model
@@ -101,7 +93,6 @@ jobs:
           tags: ${{ github.repository }}:model-${{ github.run_id }}
 
       # 10. Log in to Docker Hub
-      # PERBAIKAN: Menggunakan 'env.DOCKER_USER' (VS Code Valid)
       - name: Log in to Docker Hub
         if: env.DOCKER_USER != '' && env.DOCKER_TOKEN != ''
         uses: docker/login-action@v2
@@ -110,19 +101,17 @@ jobs:
           password: ${{ env.DOCKER_TOKEN }}
 
       # 11. Tag Docker Image
-      # PERBAIKAN: Menggunakan 'env.DOCKER_USER' di kondisi IF dan Run
       - name: Tag Docker Image
         if: env.DOCKER_USER != '' && env.DOCKER_TOKEN != ''
         run: |
           docker tag ${{ github.repository }}:model-${{ github.run_id }} ${{ env.DOCKER_USER }}/${{ github.repository }}:model-${{ github.run_id }}
 
       # 12. Push Docker Image
-      # PERBAIKAN: Menggunakan 'env.DOCKER_USER'
       - name: Push Docker Image
         if: env.DOCKER_USER != '' && env.DOCKER_TOKEN != ''
         run: |
           docker push ${{ env.DOCKER_USER }}/${{ github.repository }}:model-${{ github.run_id }}
-       
+
       # 13. Complete job
       - name: Complete job
         if: always()
