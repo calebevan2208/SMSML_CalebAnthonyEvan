@@ -272,7 +272,7 @@ class ChurnBaselineTrainer:
         Orkestrasi seluruh pipeline.
         """
         # Init DagsHub
-        dagshub.init(repo_owner='iamikhsank', repo_name='SMSML_CalebAnthony', mlflow=True)
+        dagshub.init(repo_owner='calebevan2208', repo_name='SMSML_CalebAnthony', mlflow=True)
         
         # Start MLflow run
         with mlflow.start_run():
