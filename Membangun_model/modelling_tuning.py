@@ -292,7 +292,11 @@ def train_with_tuning():
         mlflow.log_artifacts(artifact_dir, artifact_path="model_output")
         
         # Log Keras Model Native
-        mlflow.tensorflow.log_model(best_model, "keras_model")
+        mlflow.tensorflow.log_model(
+            model=best_model, 
+            artifact_path="model", 
+            registered_model_name="CalebAnthony_Churn_DeepLearning_Tuning" # <--- INI WAJIB ADA
+        )
         
         # Cleanup Local
         shutil.rmtree(artifact_dir)
@@ -303,4 +307,5 @@ def train_with_tuning():
 
 if __name__ == "__main__":
     train_with_tuning()
+
 
