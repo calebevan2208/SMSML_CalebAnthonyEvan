@@ -1,6 +1,10 @@
 # SMSML_CalebAnthony
+Dataset yang digunakan dalam proyek ini adalah Credit Card Defaulter Prediction, yaitu dataset yang berisi data historis nasabah kartu kredit yang digunakan untuk memprediksi kemungkinan terjadinya gagal bayar (default). Dataset ini mencakup berbagai atribut yang merepresentasikan karakteristik pengguna kartu kredit, seperti informasi demografis, perilaku penggunaan kartu kredit, riwayat pembayaran, serta jumlah tagihan dan pembayaran dalam beberapa periode waktu.
+Dataset Source: https://www.kaggle.com/datasets/gauravtopre/credit-card-defaulter-prediction 
 
 Project ini adalah implementasi end-to-end Machine Learning pipeline untuk prediksi churn nasabah kartu kredit. Ini mencakup data ingestion, preprocessing, EDA, model training (TensorFlow/Keras), experiment tracking (MLflow), monitoring (Prometheus + Grafana), dan CI with GitHub Actions.
+
+
 
 ---
 
