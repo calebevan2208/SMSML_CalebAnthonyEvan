@@ -1,132 +1,69 @@
-<<<<<<< HEAD
-# SMSML CalebAnthony Project
-
-Project ini adalah implementasi end-to-end Machine Learning pipeline untuk prediksi Churn Nasabah kartu kredit. Project ini mencakup tahapan Ingestion data, Preprocessing otomatis, Exploratory Data Analysis (EDA) yang komprehensif, Modeling dengan Deep Learning (TensorFlow), dan integrasi CI/CD dengan GitHub Actions serta MLflow.
-
-## 📂 Struktur Project
-
-```
-SMSML_CalebAnthony/
-│
-├── Eksperimen_SML_CalebAnthony/      # [Tahap 1] Eksperimen & Preprocessing
-│   ├── churn_raw/                    # Folder penyimpanan raw data (diunduh otomatis)
-│   ├── churn_preprocessing/          # Folder output data bersih
-│   ├── eksperimen_CalebAnthony.py    # Script EDA (Visualisasi & Analisis)
-│   ├── automate_CalebAnthony.py      # Script Automation (Download & Cleaning)
-│   └── requirements.txt              # Dependencies khusus eksperimen
-│
-├── Membangun_model/                  # [Tahap 2] Training & Tracking
-│   ├── churn_preprocessing/          # Salinan data bersih untuk training
-│   ├── modelling.py                  # Script Baseline Model Training (TensorFlow)
-│   ├── modelling_tuning.py           # Script Hyperparameter Tuning
-│   └── requirements.txt              # Dependencies untuk modeling & MLflow
-│
-└── Workflow-CI/                      # [Tahap 3] CI/CD & MLflow Configuration
-    ├── .github/workflows/            # (Note: Workflow file moved to root .github/workflows for functionality)
-    └── MLProject/
-        ├── MLproject                 # Konfigurasi Entry Point MLflow
-        ├── conda.yaml                # Konfigurasi Environment MLflow
-        └── modelling.py              # Script Modeling yang diadaptasi untuk MLflow
-```
-
-## 📂 Struktur Project (Detail Hasil setelah Running)
-```
-.
-├── Eksperimen_SML_CalebAnthony
-│   ├── analysis_results
-│   │   ├── 0_descriptive_stats.txt
-│   │   ├── 1_target_distribution.png
-│   │   ├── 2_feature_importance_corr.png
-│   │   ├── 3_payment_trend_analysis.png
-│   │   ├── 4_limit_balance_violin.png
-│   │   ├── 5_demographic_scatter.png
-│   │   ├── 6_numerical_distributions.png
-│   │   ├── 7_categorical_distributions.png
-│   │   ├── 8_correlation_heatmap.png
-│   │   ├── 9_outlier_bill.png
-│   │   └── 9_outlier_pay.png
-│   ├── automate_CalebAnthony.py
-│   ├── churn_preprocessing
-│   │   └── clean_data.csv
-│   ├── churn_raw
-│   │   └── data.csv
-│   ├── eksperimen_CalebAnthony.py
-│   └── requirements.txt
-├── Eksperimen_SML_CalebAnthony.txt
-├── Membangun_model
-│   ├── artifacts
-│   │   ├── baseline_model.h5
-│   │   ├── best_churn_model.h5
-│   │   ├── scaler.pkl
-│   │   ├── scaler_production.pkl
-│   │   └── training_history.png
-│   ├── churn_preprocessing
-│   │   └── clean_data.csv
-│   ├── DagsHub.txt
-│   ├── modelling.py
-│   ├── modelling_tuning.py
-│   └── requirements.txt
-├── README.md
-├── SMSML_CalebAnthony_Colab.ipynb
-└── Workflow-CI
-    ├── MLProject
-    │   ├── conda.yaml
-    │   ├── MLproject
-    │   └── modelling.py
-    └── Workflow-CI.txt
-```
-
-## 🚀 Cara Menjalankan Project
-
-### 1. Persiapan Environment
-Pastikan Anda menggunakan Python 3.10 atau lebih baru.
-```bash
-pip install -r SMSML_CalebAnthony/Membangun_model/requirements.txt
-```
-
-### 2. Data Automation (Ingestion & Cleaning)
-Jalankan script ini untuk mengunduh data dari sumber dan membersihkannya. Script ini juga akan menyalin data bersih ke folder `Membangun_model`.
-```bash
-python SMSML_CalebAnthony/Eksperimen_SML_CalebAnthony/automate_CalebAnthony.py
-```
-*Output: `clean_data.csv` di folder `Eksperimen.../churn_preprocessing` dan `Membangun_model/churn_preprocessing`.*
-
-### 3. Exploratory Data Analysis (EDA)
-Jalankan script ini untuk menghasilkan visualisasi lengkap tentang distribusi data, korelasi, dan pola churn.
-```bash
-python SMSML_CalebAnthony/Eksperimen_SML_CalebAnthony/eksperimen_CalebAnthony.py
-```
-*Output: File gambar (.png) dan statistik (.txt) di folder `analysis_results`.*
-
-### 4. Model Training (Baseline)
-Jalankan training model baseline Deep Learning.
-```bash
-python SMSML_CalebAnthony/Membangun_model/modelling.py
-```
-*Output: Model (`baseline_model.h5`), Scaler (`scaler.pkl`), dan plot history training di folder `artifacts`.*
-
-### 5. MLflow Run (CLI)
-Untuk menjalankan project menggunakan MLflow dengan parameter kustom:
-```bash
-cd SMSML_CalebAnthony/Workflow-CI/MLProject
-python modelling.py --epochs 50 --batch_size 32 --learning_rate 0.001
-```
-
-## 🔄 CI/CD Pipeline
-Project ini dilengkapi dengan GitHub Actions workflow (`.github/workflows/main.yml`) yang berjalan otomatis pada setiap Push atau Pull Request ke branch `main`.
-
-**Pipeline Steps:**
-1.  **Setup Environment**: Install Python 3.10 dan dependencies.
-2.  **Data Pipeline**: Menjalankan `automate_CalebAnthony.py` untuk memastikan data source dapat diakses dan diproses dengan benar.
-3.  **Model Training**: Menjalankan training model via script MLflow untuk memastikan kode modeling bebas error (Smoke Test).
-
-## 🛠 Teknologi Utama
--   **Python 3.10**
--   **TensorFlow/Keras**: Deep Learning Framework
--   **Pandas & NumPy**: Data Manipulation
--   **Matplotlib & Seaborn**: Data Visualization
--   **MLflow**: Experiment Tracking
--   **GitHub Actions**: CI Automation
-=======
 # SMSML_CalebAnthony
->>>>>>> 3ab07050e90340e24e8e20c4f8ba67667770197c
+
+Project ini adalah implementasi end-to-end Machine Learning pipeline untuk prediksi churn nasabah kartu kredit. Ini mencakup data ingestion, preprocessing, EDA, model training (TensorFlow/Keras), experiment tracking (MLflow), monitoring (Prometheus + Grafana), dan CI with GitHub Actions.
+
+---
+
+## 📂 Struktur Project (ringkas)
+- `Eksperimen_SML_CalebAnthony/` — Eksperimen, EDA, dan preprocessing
+- `Membangun_model/` — Training, tuning, dan model artifacts
+- `Monitoring_dan_Logging/` — Prometheus exporter, Docker Compose, Grafana provisioning
+- `Workflow-CI/` & `.github/workflows/` — CI workflows and MLProject entry points
+- `mlruns/` & `artifacts/` — MLflow runs & logged artifacts
+
+---
+
+## ✅ Recent additions (Dec 2025)
+- Added sample datasets:
+  - `Eksperimen_SML_CalebAnthonyEvan/preprocessing/churn_raw/data.csv`
+  - `Eksperimen_SML_CalebAnthonyEvan/preprocessing/churn_preprocessing/clean_data.csv`
+- Added many visualization images (learning curve, ROC, confusion matrix) and Grafana/Prometheus screenshots under `Monitoring_dan_Logging/`.
+- Monitoring stack and provisioning (Prometheus + Grafana + exporter) with `docker-compose` and dashboard JSONs.
+- CI: lightweight GitHub Actions workflow at `.github/workflows/ci.yml` with optional `workflow_dispatch` for manual runs.
+
+---
+
+## 🚀 Quick start
+1. Install Python deps:
+
+```bash
+python -m pip install -r Membangun_model/requirements.txt
+```
+
+2. Run training (baseline):
+
+```bash
+python Membangun_model/modelling.py
+```
+
+3. Run monitoring stack (Docker Compose):
+
+```bash
+docker compose -f Monitoring_dan_Logging/docker-compose.yml up --build -d
+# Grafana: http://localhost:3000 (default admin:admin — change after first login)
+```
+
+4. Run exporter locally:
+
+```bash
+python -m pip install -r Monitoring_dan_Logging/requirements.txt
+python Monitoring_dan_Logging/3.prometheus_exporter.py
+```
+
+---
+
+## 💡 Notes & recommendations
+- Large binary/data files (PNGs, CSVs) were added to the repo recently. To avoid repository bloat, consider enabling Git LFS:
+
+```bash
+git lfs install
+git lfs track "*.png" "*.csv"
+# Commit .gitattributes
+# Optionally rewrite history: git lfs migrate import --include="*.png,*.csv"
+```
+
+- MLflow: scripts are resilient — they will fall back to a local `mlruns/` folder if a remote tracking server is unavailable.
+
+---
+
+If you'd like, I can also enable Git LFS and migrate the current large files into LFS for you.
