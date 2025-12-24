@@ -9,48 +9,113 @@ on:
 
 jobs:
   checks:
+    name: Build, Train, and Deploy
     runs-on: ubuntu-latest
-    
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
     steps:
-      # 1. Checkout Repository
+      # 1. Run actions/checkout@v3
       - name: Run actions/checkout@v3
         uses: actions/checkout@v3
 
-      # 2. Setup Python
+      # 2. Set up Python 3.12.7
       - name: Set up Python 3.12.7
         uses: actions/setup-python@v4
         with:
           python-version: '3.12.7'
 
-      # 3. Cek Environment (Debug)
+      # 3. Check Env
       - name: Check Env
         run: |
+          echo "Checking Environment..."
           echo "Python: $(python --version)"
           echo "Pip: $(pip --version)"
-          echo "Workspace files:"
-          ls -la
+          echo "Workspace structure:"
+          ls -la | head -n 20
 
-      # 4. Install Dependencies
+      # 4. Install dependencies (General)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          
-          # Cek file requirements di berbagai lokasi (sesuai struktur folder Sense)
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f Eksperimen_SML_CalebAnthonyEvan/requirements.txt ]; then pip install -r Eksperimen_SML_CalebAnthonyEvan/requirements.txt; fi
-          if [ -f Monitoring_dan_Logging/requirements.txt ]; then pip install -r Monitoring_dan_Logging/requirements.txt; fi
+          # Cek dan install requirements project
+          if [ -f Eksperimen_SML_CalebAnthonyEvan/requirements.txt ]; then python -m pip install -r Eksperimen_SML_CalebAnthonyEvan/requirements.txt; fi
+          if [ -f Monitoring_dan_Logging/requirements.txt ]; then python -m pip install -r Monitoring_dan_Logging/requirements.txt; fi
 
-      # 5. Jalankan MLflow Project
+      # 5. Run mlflow project
       - name: Run mlflow project
         run: |
-          pip install mlflow
-          # Menjalankan training (menggunakan '|| true' agar CI tetap hijau meski training error)
+          python -m pip install mlflow
+          # Menjalankan MLflow Project (tambahkan || true jika ingin ignore error sementara)
           mlflow run Workflow-CI/MLProject -Pepochs=1 -Pbatch_size=32 || true
 
-      # 6. Ambil Run ID Terakhir
+      # 6. Get latest MLflow run_id
       - name: Get latest MLflow run_id
         id: get_run
         run: |
-          # Logika mencari folder terbaru di mlruns
-          latest=$(ls -1t mlruns/*/* 2>/dev/null | head -n1 || echo "No run found")
-          echo "Latest run detected: $latest"
+          # Mengambil folder run terakhir berdasarkan waktu modifikasi
+          latest=$(ls -1t mlruns/*/* 2>/dev/null | head -n1 || true)
+          echo "latest_run=$latest" >> $GITHUB_OUTPUT
+          echo "Latest run found: $latest"
+
+      # 7. Install Python dependencies (Model specific)
+      - name: Install Python dependencies
+        run: |
+          if [ -f Membangun_model/requirements.txt ]; then python -m pip install -r Membangun_model/requirements.txt; fi
+          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+
+      # 8. Upload to Google Drive (NEW & REPLACED)
+      # Kita perlu zip dulu agar upload lebih cepat dan rapi
+      - name: Prepare Artifacts for Drive
+        run: |
+          echo "Zipping mlruns folder..."
+          zip -r ml_artifacts.zip mlruns/ artifacts/ 2>/dev/null || echo "No artifacts folder found, zipping only mlruns"
+
+      - name: Upload to Google Drive
+        uses: adityak74/google-drive-upload-git-action@main
+        with:
+          # Sense WAJIB membuat secret ini di GitHub Settings
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS }} 
+          filename: "ml_artifacts.zip"
+          folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
+          name: "ml-artifacts-${{ github.run_id }}.zip" # Nama file di GDrive
+          overwrite: "false"
+
+      # 9. Build Docker Model
+      - name: Build Docker Model
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Monitoring_dan_Logging/Dockerfile.inference
+          push: false
+          tags: ${{ github.repository }}:model-${{ github.run_id }}
+
+      # 10. Log in to Docker Hub
+      # PERBAIKAN: Menghapus ${{ }} di dalam 'if'
+      - name: Log in to Docker Hub
+        if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 11. Tag Docker Image
+      - name: Tag Docker Image
+        # Cek: Jika Username TIDAK KOSONG dan Token TIDAK KOSONG, maka jalan.
+        if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        run: |
+          docker tag ${{ github.repository }}:model-${{ github.run_id }} ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.repository }}:model-${{ github.run_id }}
+
+      # 12. Push Docker Image
+      - name: Push Docker Image
+        if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.repository }}:model-${{ github.run_id }}
+          
+      # 13. Complete job (Manual logging)
+      - name: Complete job
+        if: always()
+        run: |
+          echo "Pipeline Finished!"
+          echo "Run ID: ${{ github.run_id }}"
