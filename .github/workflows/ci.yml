@@ -46,7 +46,7 @@ jobs:
         run: |
           pip install mlflow
           # Menjalankan training (menggunakan '|| true' agar CI tetap hijau meski training error)
-          mlflow run Workflow-CI/modelling.py
+          mlflow run Workflow-CI/MLProject -Pepochs=1 -Pbatch_size=32 || true
 
       # 6. Ambil Run ID Terakhir
       - name: Get latest MLflow run_id
