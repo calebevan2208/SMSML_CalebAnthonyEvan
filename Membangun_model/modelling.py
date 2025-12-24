@@ -46,19 +46,21 @@ LOCAL_MLRUNS_URI = "file:./mlruns"
 mlflow.set_tracking_uri(MLFLOW_SERVER_URI)
 os.makedirs("mlruns", exist_ok=True)
 
+client = mlflow.tracking.MlflowClient()
+
+# pastikan experiment ada
+exp = client.get_experiment_by_name("Churn_Prediction_Deep_Learning")
+
+if exp is None:
+    client.create_experiment("Churn_Prediction_Deep_Learning")
+
+mlflow.set_experiment("Churn_Prediction_Deep_Learning")
+
 try:
-    mlflow.set_tracking_uri(MLFLOW_SERVER_URI)
     mlflow.set_experiment("Churn_Prediction_Deep_Learning")
-
-    # test real connection
-    with mlflow.start_run():
-        mlflow.log_param("healthcheck", "ok")
-
 except Exception as e:
-    print(f"[MLFLOW FALLBACK] {e}")
+    print("fallback ke local")
 
-    mlflow.set_tracking_uri("file:./mlruns")
-    mlflow.set_experiment("Churn_Prediction_Deep_Learning")
 
 def train_model():
     print("=== Memulai Pipeline Training dengan MLflow ===")
@@ -218,4 +220,5 @@ def train_model():
 
 if __name__ == "__main__":
     train_model()
+
 
