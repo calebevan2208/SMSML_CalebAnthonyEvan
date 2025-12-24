@@ -1,0 +1,40 @@
+{
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "type": "graph",
+      "title": "CPU Usage (%)",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 6},
+      "targets": [
+        {"expr": "avg(system_cpu_usage_percent)", "legendFormat": "CPU %"}
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Memory Usage (MB)",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 6},
+      "targets": [
+        {"expr": "avg(system_memory_usage_bytes)/1024/1024", "legendFormat": "Mem MB"}
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Predictions (rate)",
+      "gridPos": {"x": 0, "y": 6, "w": 12, "h": 6},
+      "targets": [
+        {"expr": "rate(model_predictions_total[5m])", "legendFormat": "predictions/s"}
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Avg Request Time (s)",
+      "gridPos": {"x": 12, "y": 6, "w": 12, "h": 6},
+      "targets": [
+        {"expr": "rate(request_processing_seconds_sum[5m]) / rate(request_processing_seconds_count[5m])", "legendFormat": "avg_s"}
+      ]
+    }
+  ],
+  "title": "Model Monitoring Overview",
+  "schemaVersion": 22,
+  "version": 1
+}

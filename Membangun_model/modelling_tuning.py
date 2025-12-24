@@ -31,6 +31,14 @@ import logging
 import sys
 import matplotlib.pyplot as plt
 import seaborn as sns
+# Compatibility shim: `scikit-plot` does `from scipy import interp`, but recent SciPy
+# removed `interp`. Provide a compatible alias before importing `scikitplot` so this
+# script runs with modern SciPy versions.
+import scipy
+if not hasattr(scipy, 'interp'):
+    import numpy as _np
+    scipy.interp = _np.interp
+
 import scikitplot as skplt
 from pathlib import Path
 from itertools import product
@@ -87,10 +95,22 @@ def train_with_tuning():
 
     # 1. SETUP PATH & DATA
     BASE_DIR = Path(__file__).resolve().parent
-    DATA_PATH = BASE_DIR.parent / 'Eksperimen_SML_CalebAnthony' / 'churn_preprocessing' / 'clean_data.csv'
-    
-    if not DATA_PATH.exists():
-        logger.error(f"Data tidak ditemukan di: {DATA_PATH}")
+
+    possible_paths = [
+        BASE_DIR.parent / 'Eksperimen_SML_CalebAnthonyEvan' / 'churn_preprocessing' / 'clean_data.csv',
+        BASE_DIR.parent / 'Eksperimen_SML_CalebAnthonyEvan' / 'preprocessing' / 'churn_preprocessing' / 'clean_data.csv',
+        BASE_DIR / 'churn_preprocessing' / 'clean_data.csv',
+    ]
+
+    DATA_PATH = None
+    for p in possible_paths:
+        if p.exists():
+            DATA_PATH = p
+            break
+
+    if DATA_PATH is None:
+        checked = '\n'.join(str(p) for p in possible_paths)
+        logger.error(f"Data tidak ditemukan. Telah memeriksa:\n{checked}")
         return
 
     df = pd.read_csv(DATA_PATH)

@@ -37,9 +37,19 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
 
 # --- KONFIGURASI MLFLOW ---
-# Pastikan server MLflow sudah jalan (mlflow ui) sebelum run script ini
-mlflow.set_tracking_uri("http://127.0.0.1:5000")
-mlflow.set_experiment("Churn_Prediction_Deep_Learning")
+# Attempt to use a remote MLflow server; if it's unreachable, fall back to local file-based tracking
+MLFLOW_SERVER_URI = "http://127.0.0.1:5000"
+LOCAL_MLRUNS_URI = "file:./mlruns"
+
+# Prefer remote server when available (common in dev with `mlflow server --port 5000`),
+# but gracefully degrade to a local `mlruns` folder so the script still runs in CI/dev containers.
+mlflow.set_tracking_uri(MLFLOW_SERVER_URI)
+try:
+    mlflow.set_experiment("Churn_Prediction_Deep_Learning")
+except Exception as e:
+    print(f"Warning: Could not connect to MLflow server at {MLFLOW_SERVER_URI} ({e}). Falling back to local 'mlruns' folder.")
+    mlflow.set_tracking_uri(LOCAL_MLRUNS_URI)
+    mlflow.set_experiment("Churn_Prediction_Deep_Learning")
 
 def train_model():
     print("=== Memulai Pipeline Training dengan MLflow ===")
@@ -47,12 +57,24 @@ def train_model():
     # 1. SETUP PATH & DATA
     # Menggunakan path relative seperti script asli
     BASE_DIR = Path(__file__).resolve().parent
-    # Path dataset (sesuaikan jika perlu)
-    DATA_PATH = BASE_DIR.parent / 'Eksperimen_SML_CalebAnthony' / 'churn_preprocessing' / 'clean_data.csv'
-    
+
+    # Cari data di beberapa lokasi yang mungkin ada di repo (toleran terhadap penamaan folder)
+    possible_paths = [
+        BASE_DIR.parent / 'Eksperimen_SML_CalebAnthonyEvan' / 'churn_preprocessing' / 'clean_data.csv',
+        BASE_DIR.parent / 'Eksperimen_SML_CalebAnthonyEvan' / 'preprocessing' / 'churn_preprocessing' / 'clean_data.csv',
+        BASE_DIR / 'churn_preprocessing' / 'clean_data.csv',
+    ]
+
+    DATA_PATH = None
+    for p in possible_paths:
+        if p.exists():
+            DATA_PATH = p
+            break
+
     # Cek keberadaan data
-    if not os.path.exists(DATA_PATH):
-        print(f"ERROR: Data tidak ditemukan di {DATA_PATH}")
+    if DATA_PATH is None:
+        checked = '\n'.join(str(p) for p in possible_paths)
+        print(f"ERROR: Data tidak ditemukan. Telah memeriksa:\n{checked}")
         return
 
     print(f"Loading dataset dari: {DATA_PATH}")
@@ -113,7 +135,7 @@ def train_model():
 
     # 4. MLFLOW RUN
     # Mengaktifkan Autologging untuk TensorFlow/Keras
-    mlflow.tensorflow.autolog(log_models=True, log_datasets=False)
+    mlflow.tensorflow.autolog(log_models=True, log_datasets=False) #----> autolog()
 
     with mlflow.start_run(run_name="Baseline_DNN_Caleb"):
         print("MLflow Run Started...")

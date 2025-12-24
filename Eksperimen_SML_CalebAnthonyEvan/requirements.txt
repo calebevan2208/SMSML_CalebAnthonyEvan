@@ -14,3 +14,6 @@ scikit-learn>=1.4.0  # Diperlukan untuk LabelEncoder di script otomasi
 
 # --- Tracking & Logging (User Request) ---
 mlflow==2.19.0       # Strict versioning sesuai permintaan Sense
+
+# --- Dataset ---
+# https://docs.google.com/spreadsheets/d/1tovcDh4h56V03CA5VaCSsVKqZb2QGjZ3/export?format=csv
