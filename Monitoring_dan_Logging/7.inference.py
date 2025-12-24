@@ -2,19 +2,7 @@
 """Simple inference server with Prometheus metrics.
 
 Usage:
-    python Monitoring_dan_Logging/7.inference.py --model ../artifacts/model_output/model.h5 --port 5001
-
-Endpoints:
-    GET /health        -> 200 OK
-    POST /predict      -> Accepts JSON payloads and returns predictions
-    GET /metrics       -> Prometheus metrics
-
-Accepted payloads for /predict (JSON):
-  - {"instances": [[...], [...]]}  -> list of numeric feature lists
-  - {"instances": [{"col1": val, "col2": val}, ...]} -> list of dicts (order inferred)
-  - Or a plain JSON list [: list] of lists or dicts
-
-Notes: If a scaler file `scaler.pkl` is present next to the model, it will be used to transform input features.
+    python 7.inference.py --model model.h5 --port 5001
 """
 
 from __future__ import annotations
@@ -24,219 +12,250 @@ import logging
 import os
 import pickle
 import sys
+import time
 from functools import wraps
-from io import BytesIO
+from typing import Optional, Union
 
 import numpy as np
 from flask import Flask, jsonify, request, Response
 
+# Inisialisasi TensorFlow
 try:
     import tensorflow as tf
     from tensorflow.keras.models import load_model
-except Exception as e:
+except ImportError:
     tf = None
+    print("WARNING: TensorFlow not installed. Server will start but predictions will fail.")
 
+# Inisialisasi Prometheus
 try:
     from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-except Exception:
-    # If prometheus_client is missing, create stubs that raise helpful errors when used
+except ImportError:
+    # Dummy classes jika prometheus_client tidak ada
     Counter = Histogram = Gauge = None
     generate_latest = None
     CONTENT_TYPE_LATEST = 'text/plain; version=0.0.4; charset=utf-8'
 
-# App & logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# Setup Logging
+logging.basicConfig(
+    level=logging.INFO, 
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 logger = logging.getLogger("inference_server")
 app = Flask(__name__)
 
-# Prometheus metrics
+# --- Prometheus Metrics Definitions ---
 PREDICT_REQUESTS = Counter("predict_requests_total", "Total number of prediction requests") if Counter else None
 PREDICT_LATENCY = Histogram("predict_latency_seconds", "Prediction latency in seconds") if Histogram else None
 LAST_PREDICTION = Gauge("last_prediction_value", "Last prediction probability returned") if Gauge else None
 
+# --- Global Variables ---
 MODEL = None
 SCALER = None
 FEATURE_NAMES = None
 
-
 def require_tf(func):
+    """Decorator untuk memastikan TensorFlow tersedia sebelum menjalankan fungsi."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         if tf is None:
             return jsonify({"error": "TensorFlow is not installed in the environment."}), 500
         return func(*args, **kwargs)
-
     return wrapper
-
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"})
-
+    """Health check endpoint."""
+    if MODEL is None:
+        return jsonify({"status": "error", "message": "Model not loaded"}), 503
+    return jsonify({"status": "ok", "model_loaded": True})
 
 @app.route("/metrics", methods=["GET"])
 def metrics():
+    """Endpoint untuk scraping Prometheus."""
     if generate_latest is None:
         return Response("prometheus_client not installed", status=500)
     return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
-
 @app.route("/predict", methods=["POST"])
 @require_tf
 def predict():
+    """Endpoint utama untuk inferensi."""
     if PREDICT_REQUESTS:
         PREDICT_REQUESTS.inc()
 
-    data = None
+    t0 = time.time()
+    
+    # 1. Parsing Input
     try:
         data = request.get_json(force=True)
-    except Exception:
-        return jsonify({"error": "Invalid JSON payload"}), 400
+        if not data:
+            raise ValueError("Empty Payload")
+    except Exception as e:
+        return jsonify({"error": f"Invalid JSON payload: {str(e)}"}), 400
 
-    if data is None:
-        return jsonify({"error": "Empty JSON payload"}), 400
-
-    # Extract instances
+    # 2. Extract Instances
     instances = None
-    if isinstance(data, dict) and "instances" in data:
-        instances = data["instances"]
+    if isinstance(data, dict):
+        if "instances" in data:
+            instances = data["instances"]
+        elif "data" in data:
+            instances = data["data"]
+        else:
+            instances = [data] # Single dictionary input
     elif isinstance(data, list):
         instances = data
-    elif isinstance(data, dict) and "data" in data:
-        instances = data["data"]
     else:
-        # maybe top-level dict with single sample
-        instances = [data]
+        return jsonify({"error": "Payload must be a JSON object (dict) or list"}), 400
 
-    # Convert to numpy array
+    # 3. Preprocessing (Convert to NumPy)
     try:
         X = _parse_instances(instances)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    # Apply scaler if available
-    if SCALER is not None:
+    # 4. Scaling (Optional)
+    if SCALER:
         try:
             X = SCALER.transform(X)
         except Exception as e:
             logger.exception("Scaler transform failed")
             return jsonify({"error": f"Scaler transform failed: {e}"}), 500
 
-    # Run prediction
-    import time
-
-    t0 = time.time()
+    # 5. Prediction
     try:
-        preds = MODEL.predict(X)
+        preds = MODEL.predict(X, verbose=0)
     except Exception as e:
         logger.exception("Model prediction failed")
         return jsonify({"error": f"Model prediction failed: {e}"}), 500
-    latency = time.time() - t0
 
+    # 6. Formatting Result
+    latency = time.time() - t0
     if PREDICT_LATENCY:
         PREDICT_LATENCY.observe(latency)
 
-    # Convert preds to probabilities and classes
     preds = np.asarray(preds).reshape(-1)
     results = []
+    
     for p in preds:
-        cls = int(p >= 0.5)
-        results.append({"probability": float(p), "class": cls})
+        prob = float(p)
+        cls = int(prob >= 0.5) # Threshold 0.5
+        results.append({"probability": prob, "class": cls})
+        
         if LAST_PREDICTION:
-            LAST_PREDICTION.set(float(p))
+            LAST_PREDICTION.set(prob)
 
     return jsonify({"predictions": results, "latency_seconds": latency})
 
 
 def _parse_instances(instances):
-    # instances can be list of lists or list of dicts
+    """Helper untuk mengubah list/dict menjadi NumPy array."""
     if not isinstance(instances, list):
-        raise ValueError("'instances' must be a list of samples")
-
+        raise ValueError("'instances' must be a list")
+    
     if len(instances) == 0:
         raise ValueError("Empty instances list")
 
-    # detect if list of dicts
+    # Jika input berupa List of Dicts (misal dari Pandas DF)
     if isinstance(instances[0], dict):
-        # build feature matrix using union of keys; if FEATURE_NAMES known, use that order
-        import pandas as pd
-
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("Pandas required for dict inputs but not installed")
+            
         df = pd.DataFrame(instances)
+        
+        # Jika kita punya nama fitur yang disimpan saat training, urutkan kolomnya
         if FEATURE_NAMES:
-            # reindex to FEATURE_NAMES, fill missing with 0
+            # Reindex memastikan urutan kolom sesuai training, isi 0 jika ada yang hilang
             df = df.reindex(columns=FEATURE_NAMES, fill_value=0)
+        
         return df.to_numpy(dtype=float)
 
-    # otherwise assume list of lists / scalars
+    # Jika input berupa List of Lists (Raw Values)
     arr = np.asarray(instances, dtype=float)
     if arr.ndim == 1:
         arr = arr.reshape(1, -1)
     return arr
 
 
-def load(model_path: str | None = None):
+def load(model_path: Optional[str] = None):
+    """Memuat Model Keras, Scaler, dan Feature Names."""
     global MODEL, SCALER, FEATURE_NAMES
 
+    # --- 1. Cari Lokasi Model ---
     if model_path is None:
-        # try some defaults
+        # Daftar lokasi kemungkinan file model berada
         candidates = [
+            "model.h5",                                         # Di folder yang sama (Docker root)
+            "model_output/model.h5",                            # Di folder artifacts (Artifact upload)
+            os.path.join("artifacts", "model_output", "model.h5"), 
             os.path.join("..", "artifacts", "model_output", "model.h5"),
-            os.path.join("..", "Membangun_model", "artifacts", "model.h5"),
-            os.path.join("..", "artifacts", "model.h5"),
-            os.path.join("artifacts", "model_output", "model.h5"),
+            "/app/model.h5"                                     # Lokasi umum di Docker
         ]
         for c in candidates:
             if os.path.exists(c):
                 model_path = c
                 break
 
-    if model_path is None:
-        logger.error("No model path specified and no default model found")
-        raise FileNotFoundError("model file not found")
+    if model_path is None or not os.path.exists(model_path):
+        logger.error("Model file not found. Checked paths: %s", candidates if model_path is None else model_path)
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
-    logger.info("Loading model from %s", model_path)
-    MODEL = load_model(model_path)
+    logger.info(f"Loading model from: {os.path.abspath(model_path)}")
+    try:
+        MODEL = load_model(model_path)
+    except Exception as e:
+        logger.fatal(f"Failed to load Keras model: {e}")
+        sys.exit(1)
 
-    # try to load scaler next to model
-    scaler_path = os.path.join(os.path.dirname(model_path), "scaler.pkl")
+    # --- 2. Cari Lokasi Scaler ---
+    # Coba cari di folder yang sama dengan model
+    base_dir = os.path.dirname(model_path)
+    scaler_path = os.path.join(base_dir, "scaler.pkl")
+    
+    # Jika tidak ada, coba cari di path alternatif
     if not os.path.exists(scaler_path):
-        # also try repository artifact path
-        scaler_path = os.path.join("..", "artifacts", "model_output", "scaler.pkl")
+        scaler_path = "scaler.pkl" 
 
     if os.path.exists(scaler_path):
         try:
             with open(scaler_path, "rb") as f:
                 SCALER = pickle.load(f)
-            logger.info("Loaded scaler from %s", scaler_path)
+            logger.info(f"Loaded scaler from: {os.path.abspath(scaler_path)}")
         except Exception:
-            logger.exception("Failed to load scaler at %s", scaler_path)
+            logger.warning(f"Found scaler at {scaler_path} but failed to load it.")
+    else:
+        logger.warning("Scaler not found. Running without input scaling.")
 
-    # try to infer feature names if a file exists
-    features_path = os.path.join(os.path.dirname(model_path), "feature_names.pkl")
+    # --- 3. Cari Feature Names ---
+    features_path = os.path.join(base_dir, "feature_names.pkl")
     if os.path.exists(features_path):
         try:
             with open(features_path, "rb") as f:
                 FEATURE_NAMES = pickle.load(f)
-            logger.info("Loaded feature names (%d) from %s", len(FEATURE_NAMES), features_path)
+            logger.info(f"Loaded {len(FEATURE_NAMES)} feature names.")
         except Exception:
-            logger.exception("Failed to load feature names at %s", features_path)
+            logger.warning("Failed to load feature names.")
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default=None, help="Path to the Keras model (.h5 or SavedModel dir)")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", default=5001, type=int)
+    parser.add_argument("--model", default=None, help="Path to the .h5 model file")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind")
+    parser.add_argument("--port", default=5001, type=int, help="Port to bind")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args(argv)
 
+    # Load model sebelum server jalan
     try:
         load(args.model)
     except Exception as e:
-        logger.exception("Failed to load model: %s", e)
+        logger.critical(f"Server startup failed: {e}")
         sys.exit(1)
 
-    logger.info("Starting inference server on %s:%d", args.host, args.port)
+    logger.info(f"Starting inference server on http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 
