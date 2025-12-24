@@ -2,7 +2,7 @@
 """Simple inference server with Prometheus metrics.
 
 Usage:
-    python Monitoring_dan_Logging/inference.py --model ../artifacts/model_output/model.h5 --port 5001
+    python Monitoring_dan_Logging/7.inference.py --model ../artifacts/model_output/model.h5 --port 5001
 
 Endpoints:
     GET /health        -> 200 OK

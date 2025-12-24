@@ -32,6 +32,24 @@ python -m pip install -r requirements.txt
 python 3.prometheus_exporter.py
 ```
 
+## Menjalankan inference server (lokal)
+Dokumentasi dan contoh inference server untuk model yang sudah dilatih. Server juga mengekspos `/metrics` untuk Prometheus.
+
+Contoh menjalankan server:
+
+```bash
+python 7.inference.py --model ../artifacts/model_output/model.h5 --port 5001
+```
+
+Endpoints:
+- `GET /health` — healthcheck
+- `POST /predict` — kirim JSON payload; contoh: `{ "instances": [[...], [...]] }`
+- `GET /metrics` — Prometheus metrics yang dapat di-scrape oleh Prometheus
+
+Catatan:
+- Jika ada `scaler.pkl` di folder model, server akan memuatnya dan menerapkan transformasi sebelum prediksi.
+- Untuk menambahkanInference server ke `docker-compose.yml`, tambahkan service yang menjalankan `python 7.inference.py` dan expose port yang sesuai.
+
 ## Catatan & rekomendasi
 - Dashboard yang disertakan bersifat minimal; tambahkan panels sesuai kebutuhan produksi.
 - Untuk alerting: tambahkan `alerting` rules di `2.prometheus.yml` dan konfigurasi Alertmanager.
