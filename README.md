@@ -93,11 +93,51 @@ Project ini adalah implementasi end-to-end Machine Learning pipeline untuk predi
 
 ## ✅ Recent additions (Dec 2025)
 - Added sample datasets:
-  - `Eksperimen_SML_CalebAnthonyEvan/preprocessing/churn_raw/data.csv`
-  - `Eksperimen_SML_CalebAnthonyEvan/preprocessing/churn_preprocessing/clean_data.csv`
+  - `Eksperimen_SML_CalebAnthonyEvan/preprocessing/churn_raw/data.csv` (3.3 MB, ~30k rows)
+  - `Eksperimen_SML_CalebAnthonyEvan/preprocessing/churn_preprocessing/clean_data.csv` (2.6 MB, ~30k rows)
 - Added many visualization images (learning curve, ROC, confusion matrix) and Grafana/Prometheus screenshots under `Monitoring_dan_Logging/`.
 - Monitoring stack and provisioning (Prometheus + Grafana + exporter) with `docker-compose` and dashboard JSONs.
 - CI: lightweight GitHub Actions workflow at `.github/workflows/ci.yml` with optional `workflow_dispatch` for manual runs.
+
+---
+
+## 📊 Dataset — `Eksperimen_SML_CalebAnthonyEvan`
+Deskripsi singkat dataset yang digunakan untuk eksperimen dan training.
+
+- Lokasi file:
+  - `Eksperimen_SML_CalebAnthonyEvan/preprocessing/churn_raw/data.csv` — raw, belum dibersihkan
+  - `Eksperimen_SML_CalebAnthonyEvan/preprocessing/churn_preprocessing/clean_data.csv` — hasil preprocessing (clean)
+
+- Informasi cepat:
+  - Ukuran: 3.3 MB (raw), 2.6 MB (clean)
+  - Baris: ~30.001 contoh
+  - Target: kolom `default` (1 = default / churn, 0 = non-default)
+
+- Kolom utama (header contoh):
+  - `ID` (hanya di raw)
+  - `LIMIT_BAL` — total kredit/kredit limit
+  - `SEX`, `EDUCATION`, `MARRIAGE`, `AGE`
+  - `PAY_1`..`PAY_6` (status pembayaran untuk 6 bulan terakhir)
+  - `BILL_AMT1`..`BILL_AMT6` (tagihan setiap bulan)
+  - `PAY_AMT1`..`PAY_AMT6` (jumlah pembayaran setiap bulan)
+  - `default` — label target
+
+- Sumber & Reproduksi:
+  - Dataset ini disimpan di folder `Eksperimen_SML_CalebAnthonyEvan/preprocessing/`.
+  - Untuk meregenerasi dataset bersih dari source raw, jalankan:
+
+```bash
+python Eksperimen_SML_CalebAnthonyEvan/preprocessing/automate_CalebAnthony.py
+```
+
+- Catatan:
+  - `clean_data.csv` sudah siap dipakai untuk training; pastikan kolom `default` diset sebagai target pada pipeline training.
+  - Untuk data yang lebih besar atau sensitif, pertimbangkan menyimpan di remote storage atau menggunakan Git LFS untuk file besar.
+
+- Sumber & sitasi:
+  - Dataset asli: UCI Machine Learning Repository — "Default of credit card clients Dataset" (Yeh, I.-C. & Lien, C.-H., 2009).
+    Link: https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients
+  - Catatan: file yang ada di repo ini adalah salinan/preprocessed untuk eksperimen; lihat `Eksperimen_SML_CalebAnthonyEvan/preprocessing/automate_CalebAnthony.py` untuk detail pembersihan dan transformasi.
 
 ---
 
