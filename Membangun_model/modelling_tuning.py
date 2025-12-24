@@ -65,7 +65,7 @@ os.environ['MLFLOW_TRACKING_PASSWORD'] = '2205072872dc0f9aaf561b740bc01685c6417c
 REMOTE_URI = 'https://dagshub.com/calebevan2208/SMSML_CalebAnthony.mlflow' 
 
 mlflow.set_tracking_uri(REMOTE_URI)
-mlflow.set_experiment("CalebAnthony_Churn_DeepLearning_v1")
+mlflow.set_experiment("CalebAnthony_Churn_DeepLearning_Tuning")
 
 # --- SETUP LOGGING CONSOLE ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -303,3 +303,4 @@ def train_with_tuning():
 
 if __name__ == "__main__":
     train_with_tuning()
+
