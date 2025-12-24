@@ -101,25 +101,46 @@ def train_with_tuning():
     logger.info("=== Memulai Pipeline Tuning Deep Learning ===")
 
     # 1. SETUP PATH & DATA
-    BASE_DIR = Path(__file__).resolve().parent
+    # Gunakan Path Absolute agar tidak bingung posisi folder
+    CURRENT_FILE = Path(__file__).resolve()
+    PROJECT_ROOT = None
+    
+    # Mencari root project dengan cara mundur sampai ketemu folder .github atau file ci.yml
+    # Ini teknik 'Anchor' agar kita tahu kita ada di mana
+    for parent in [CURRENT_FILE] + list(CURRENT_FILE.parents):
+        if (parent / '.github').exists() or (parent / 'ci.yml').exists() or (parent / '.git').exists():
+            PROJECT_ROOT = parent
+            break
+            
+    if PROJECT_ROOT is None:
+        # Fallback jika struktur aneh, asumsi 3 level ke atas
+        PROJECT_ROOT = CURRENT_FILE.parent.parent.parent
 
-    # Logika pencarian data yang robust
+    print(f"DEBUG: Project Root dideteksi di: {PROJECT_ROOT}")
+
+    # Daftar kemungkinan lokasi data (Sesuaikan dengan nama folder asli Sense!)
     possible_paths = [
-        BASE_DIR.parent / 'Eksperimen_SML_CalebAnthonyEvan' / 'churn_preprocessing' / 'clean_data.csv',
-        BASE_DIR.parent / 'Eksperimen_SML_CalebAnthonyEvan' / 'preprocessing' / 'churn_preprocessing' / 'clean_data.csv',
-        BASE_DIR / 'churn_preprocessing' / 'clean_data.csv',
+        # Coba cari relatif dari Root
+        PROJECT_ROOT / 'Eksperimen_SML_CalebAnthonyEvan' / 'churn_preprocessing' / 'clean_data.csv',
+        PROJECT_ROOT / 'Eksperimen_SML_CalebAnthonyEvan' / 'preprocessing' / 'churn_preprocessing' / 'clean_data.csv',
+        # Coba cari recursive (Find) - INI JURUS PAMUNGKAS
+        next(PROJECT_ROOT.rglob('clean_data.csv'), None)
     ]
 
     DATA_PATH = None
     for p in possible_paths:
-        if p.exists():
+        if p and p.exists():
             DATA_PATH = p
             break
 
     if DATA_PATH is None:
-        checked = '\n'.join(str(p) for p in possible_paths)
-        logger.error(f"Data tidak ditemukan. Telah memeriksa:\n{checked}")
-        return
+        print("❌ CRITICAL ERROR: Data clean_data.csv TIDAK DITEMUKAN dimanapun!")
+        print(f"Saya sudah mencari mulai dari: {PROJECT_ROOT}")
+        # Gunakan sys.exit(1) agar Pipeline GitHub GAGAL (Merah) kalau data gak ketemu
+        sys.exit(1) 
+
+    print(f"✅ Data ditemukan di: {DATA_PATH}")
+
 
     logger.info(f"Data loaded form: {DATA_PATH}")
     df = pd.read_csv(DATA_PATH)
