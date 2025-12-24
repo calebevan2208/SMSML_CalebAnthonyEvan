@@ -89,6 +89,29 @@ jobs:
           # Mengambil nama repo (misal: SMSML_Caleb...) dan menjadikannya huruf kecil (smsml_caleb...)
           echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
+# --- TAMBAHKAN LANGKAH INI (PENTING!) ---
+      - name: Prepare Model for Docker
+        run: |
+          echo "🔍 Mencari file model.h5 di seluruh folder..."
+          # Mencari file .h5 di folder mlruns atau folder output lainnya
+          MODEL_PATH=$(find . -name "model.h5" -type f | head -n 1)
+          
+          if [ -z "$MODEL_PATH" ]; then
+            echo "CRITICAL ERROR: File model.h5 tidak ditemukan dimanapun!"
+            # Kita coba cari file apapun yang berekstensi .h5 kalau nama filenya beda
+            MODEL_PATH=$(find . -name "*.h5" -type f | head -n 1)
+          fi
+
+          if [ -n "$MODEL_PATH" ]; then
+            echo "Model ditemukan di: $MODEL_PATH"
+            echo "Memindahkan model ke root folder..."
+            cp "$MODEL_PATH" ./model.h5
+            ls -l model.h5
+          else
+            echo "GAGAL: Tidak ada file model (.h5) yang terbentuk setelah training."
+            exit 1
+          fi
+
       # 10. Build Docker Model
       - name: Build Docker Model
         uses: docker/build-push-action@v4
