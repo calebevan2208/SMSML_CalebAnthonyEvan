@@ -40,17 +40,13 @@ jobs:
           if [ -f Eksperimen_SML_CalebAnthonyEvan/requirements.txt ]; then pip install -r Eksperimen_SML_CalebAnthonyEvan/requirements.txt; fi
           if [ -f Monitoring_dan_Logging/requirements.txt ]; then pip install -r Monitoring_dan_Logging/requirements.txt; fi
       
-      - name: Set MLflow tracking
-        run: |
-          mkdir -p mlruns
-          echo "MLFLOW_TRACKING_URI=file:./mlruns" >> $GITHUB_ENV
 
       # 5. Jalankan MLflow Project
       - name: Run mlflow project
         run: |
           pip install mlflow
           # Menjalankan training (menggunakan '|| true' agar CI tetap hijau meski training error)
-          mlflow run Workflow-CI/MLProject -Pepochs=1 -Pbatch_size=32 || true
+          mlflow run Workflow-CI/modelling.py
 
       # 6. Ambil Run ID Terakhir
       - name: Get latest MLflow run_id
